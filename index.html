@@ -199,7 +199,8 @@ const DATA=[{"id":"dyspnea","complaint":"Shortness of breath","stem":"An adult p
    - Sound effects, mutable.
    Colors are blue / violet / gold plus distinct shapes and labels, never red vs green. */
 // thresholds are score / points of the complaints' common (tier 1) causes plus breadth; a calibrated guess, tune after real play
-const RANKS=[[0,'Pre-med'],[.2,'MS1'],[.4,'MS2'],[.6,'MS3'],[.8,'MS4'],[1.0,'Intern'],[1.25,'Resident'],[1.55,'Chief resident'],[1.9,'Fellow'],[2.4,'Attending'],[3.1,'Grand rounds speaker']];
+/* day-total ladder (his pick, Nov 21, 2026): rank = the day's running point total against fixed steps, so it only climbs */
+const RANKS=[[0,'Pre-med'],[150,'MS1'],[400,'MS2'],[750,'MS3'],[1200,'MS4'],[1800,'Intern'],[2500,'Resident'],[3300,'Chief resident'],[4200,'Fellow'],[5200,'Attending'],[6500,'Grand rounds speaker']];
 function rankOf(r){let k=0;RANKS.forEach((x,i)=>{if(r>=x[0])k=i});return k}
 // par: what a solid player gets on THIS complaint (up to 20 common + 10 solid causes, every class); rank = score / par
 function corePts(R){let n1=0,n2=0,cm=0;R.causes.forEach(c=>{if(c.t===1)n1++;else if(c.t===2)n2++;if(c.cm&&c.t===1)cm++});return PTS[1]*Math.min(n1,20)+PTS[2]*Math.min(n2,10)+CM_BONUS*Math.min(cm,4)+R.cx.classes.length*CLASS_BONUS+ALL_BONUS}
@@ -337,7 +338,6 @@ function Haul(host,R,opts){
   pool.push({id:'pocket',w:2,label:`3 in the ${LBLs[pk]} pocket`,test:()=>cls(pk).filter(o=>has(o.i)).length>=3});
   if(wanted.length)pool.push({id:'wanted',w:3,label:'Catch one that got away last time',test:()=>wanted.some(has)});
   if(opts.best>0)pool.push({id:'best',w:2,label:`Beat your best here (${opts.best})`,test:()=>scoreRound(R).total>opts.best});
-  if(opts.prevRound>0)pool.push({id:'beat',w:1,label:`Beat last round (${opts.prevRound})`,test:()=>scoreRound(R).total>opts.prevRound});
   const B=[];while(B.length<3&&pool.length){const tw=pool.reduce((a,b)=>a+b.w,0);let x=rnd()*tw,j=0;for(;j<pool.length;j++){x-=pool[j].w;if(x<=0)break}B.push(pool.splice(Math.min(j,pool.length-1),1)[0])}
   host.innerHTML=`<div class="voy">
    <div class="voyhead"><span class="rk"><b class="rkT"></b><small class="rkN"></small><i class="rkBar"><i></i></i></span><button class="mute" type="button" aria-label="Sound on or off">${muted()?'🔇':'🔊'}</button><button class="mute calmB" type="button" aria-label="Screen shake and flashes on or off" title="Shake and flashes">${calm()?'🧘':'💥'}</button></div>
@@ -412,11 +412,10 @@ function Haul(host,R,opts){
     $s('boat').animate([{transform:`translate(120px,${SEA-2}px) scale(1.25)`},{transform:`translate(120px,${SEA+2}px) rotate(3deg) scale(1.25)`},{transform:`translate(120px,${SEA-2}px) scale(1.25)`}],{duration:380,easing:'ease-out'})}
   let bestS=0;
   const prior=opts.prior||0,n0=opts.n0||0,peak=opts.peak||0;
-  const need=t=>Math.max(0,(t*(n0+1)-prior)*core);/* round score that lifts the voyage average to ratio t */
   let gearK=peak;
-  function rankText(score){score=bestS=Math.max(bestS,score);const avg=(prior+score/core)/(n0+1);const k=Math.max(peak,rankOf(avg));host.querySelector('.rkT').textContent=RANKS[k][1];
-    host.querySelector('.rkN').textContent=k<RANKS.length-1?`${Math.max(1,Math.ceil(need(RANKS[k+1][0])-score))} pts to ${RANKS[k+1][1]}`:'Top of the ladder';
-    {const lo=need(RANKS[k][0]),hi=k<RANKS.length-1?need(RANKS[k+1][0]):lo+1;host.querySelector('.rkBar i').style.width=Math.max(4,Math.min(100,100*(score-lo)/Math.max(1,hi-lo)))+'%'}
+  function rankText(score){score=bestS=Math.max(bestS,score);const T=prior+score;const k=Math.max(peak,rankOf(T));host.querySelector('.rkT').textContent=RANKS[k][1];
+    host.querySelector('.rkN').textContent=k<RANKS.length-1?`${Math.max(1,RANKS[k+1][0]-T)} pts to ${RANKS[k+1][1]}`:'Top of the ladder';
+    {const lo=RANKS[k][0],hi=k<RANKS.length-1?RANKS[k+1][0]:lo+1;host.querySelector('.rkBar i').style.width=Math.max(4,Math.min(100,100*(T-lo)/Math.max(1,hi-lo)))+'%'}
     if(level>=0&&k>level&&gearLevel(k)>gearLevel(gearK)){const w=GEAR[gearLevel(k)-1][1];gearK=k;$s('cap').innerHTML=pipSVG(k,'star');setTimeout(()=>{if(svg.isConnected)face('normal')},1800);$s('cap').animate([{opacity:.3},{opacity:1}],{duration:500});setTimeout(()=>{if(svg.isConnected){banner('Pip earned '+w+'!',2000);say('Look, Doc! '+w.charAt(0).toUpperCase()+w.slice(1)+'!',2000,true)}},2000)}
     if(level>=0&&k>level){banner('Promoted: '+RANKS[k][1]+'!',1900);SFX.promo();
       host.querySelector('.rk').animate([{transform:'scale(1)'},{transform:'scale(1.25)'},{transform:'scale(1)'}],{duration:500});face('star',1800);say(pickL(['Promoted! Captain '+RANKS[k][1]+'!','We made '+RANKS[k][1]+'!']),1900,true)}
@@ -620,7 +619,7 @@ function how(){
    <li>Your score keeps adding up across all five rounds.</li>
    <li><b>Depth:</b> the five complaints run from easiest to hardest, so the Shallows is a warm-up and the Abyss is the toughest patient of the day. A complaint is harder when it has fewer obvious causes and more classes to cover. Your rank is measured against each complaint's own common causes, so a hard dive is judged fairly.</li>
    <li>Only specific diagnoses count; typing a class like "cardiac" scores nothing. Abbreviations and other names work (STEMI, MI and myocardial infarction all count). If your spelling is close, or you have typed the first few letters of a long name, the game shows what it thinks you mean, and Enter accepts it.</li>
-   <li><b>Rank:</b> your voyage rank climbs across all five dives, from Pre-med through MS1 to MS4, Intern, Resident, Chief resident, Fellow, Attending and Grand rounds speaker, measured against the common causes of the complaints so far. Your boat upgrades as you climb.</li>
+   <li><b>Rank:</b> your rank is your running point total for the day, so it only climbs: Pre-med at 0, MS1 150, MS2 400, MS3 750, MS4 1,200, Intern 1,800, Resident 2,500, Chief resident 3,300, Fellow 4,200, Attending 5,200 and Grand rounds speaker at 6,500. Each dive is also graded on its own with one to three shells. Your boat upgrades as you climb.</li>
    <li><b>Net pockets:</b> each pocket is one class of disease. Every pocket is named before you start, so you know which classes to cover. Stall for a while and Captain Pip points you to an empty one.</li>
    <li><b>Bounties</b> are three small goals per dive. They earn a stamp, not points. Your <b>logbook</b> keeps every cause you have ever caught, and a first-ever catch shows a one-line reason it belongs.</li>
    <li>Tiers were set by the people who wrote each list: common is what almost everyone names first, solid is what a good student gets, niche is rare but real.</li>
@@ -648,7 +647,7 @@ function study(cx){
 function playMore(){const today=new Set((store.get('daily:'+DAYN,{rounds:[]}).rounds||[]).map(r=>r.id));const pool=DATA.filter(d=>!today.has(d.id));play(DSORT(shuffle(pool.length>=ROUNDS?pool:DATA,Math.random).slice(0,ROUNDS)),true)}
 function startDaily(){let list=DSORT(shuffle(DATA,mulberry32(DAYN*7919+13)).slice(0,ROUNDS));const run=store.get('run:'+DAYN,null);
   if(run&&run.results&&run.results.length){const done=run.results.map(r=>r.id);if(done.some((id,i)=>list[i]&&list[i].id!==id)){const rest=list.filter(c=>!done.includes(c.id));list=done.map(id=>DATA.find(d=>d.id===id)).filter(Boolean).concat(rest)}}
-  if(run&&run.results&&run.results.length&&run.results.length<list.length){G={list,practice:false,i:run.results.length,results:run.results,peak:run.peak||0};toast('Picking up where you left off');dive(round);return}
+  if(run&&run.results&&run.results.length&&run.results.length<list.length){G={list,practice:false,i:run.results.length,results:run.results,peak:rankOf(run.results.reduce((a,r)=>a+r.score.total,0))};toast('Picking up where you left off');dive(round);return}
   play(list,false)}
 
 let G=null;
@@ -687,7 +686,7 @@ function roundGo(){
   </div></section>`;
   const q=$('#q'),hint=$('#hint'),fixBox=$('#fixBox');q.focus();
   const prevR=G.results.length?G.results[G.results.length-1].score.total:null;const priorCore=G.results.reduce((a,r)=>a+r.core,0);
-  const H=Haul($('#haul'),R,{zone:zoneOf(),prevRound:prevR,best:store.get('best',{})[cx.id]||0,daily:!G.practice,away:store.get('away',{})[cx.id]||[],roundNo:G.i+1,nRounds:G.list.length,prior:G.practice?0:G.results.reduce((a,r)=>a+r.score.total/r.core,0),n0:G.practice?0:G.results.length,peak:G.practice?0:(G.peak||0),logN:Object.values(store.get('log',{})).reduce((a,l)=>a+l.length,0)});
+  const H=Haul($('#haul'),R,{zone:zoneOf(),prevRound:prevR,best:store.get('best',{})[cx.id]||0,daily:!G.practice,away:store.get('away',{})[cx.id]||[],roundNo:G.i+1,nRounds:G.list.length,prior:G.practice?0:runTotal(),n0:0,peak:G.practice?0:rankOf(runTotal()),logN:Object.values(store.get('log',{})).reduce((a,l)=>a+l.length,0)});
   const setHint=(t,c)=>{hint.textContent=t;hint.className='hint'+(c?' '+c:'')};
   const fmt=s=>Math.floor(s/60)+':'+String(s%60).padStart(2,'0');
   clearInterval(window._wnTick);const tick=window._wnTick=setInterval(()=>{if(over||!document.getElementById('secs')){clearInterval(tick);return}left--;$('#secs').textContent=fmt(left);{const c2=$('#secs2');if(c2)c2.textContent=fmt(left)}$('#arc').setAttribute('stroke-dashoffset',String(175.93*(1-left/SECS)));H.time(left/SECS);if(left<=10)$('#ring').classList.add('low');if(left<=0)finish()},1000);
@@ -779,7 +778,7 @@ function dive(next){const z=Math.min(4,G.i);let done=false;const fin=()=>{if(don
   $('#skipd').onclick=fin;setTimeout(fin,2300)}
 function roundDone(){
   const R=G.R,s=scoreRound(R),p=pearlOf(R);const last=G.i===G.list.length-1;const multi=G.list.length>1;
-  const missedCM=R.causes.filter((c,i)=>c.cm&&!R.found.has(i)).length;const avg=G.results.reduce((a,r)=>a+r.score.total/r.core,0)/G.results.length;const prevPeak=G.peak||0;G.peak=Math.max(G.peak||0,rankOf(avg));const rank=RANKS[G.peak][1],rRank=RANKS[rankOf(s.total/corePts(R))][1];const me=G.results[G.results.length-1];
+  const missedCM=R.causes.filter((c,i)=>c.cm&&!R.found.has(i)).length;const avg=G.results.reduce((a,r)=>a+r.score.total/r.core,0)/G.results.length;const prevPeak=G.peak||0;G.peak=rankOf(G.practice?s.total:runTotal());const rank=RANKS[G.peak][1];const me=G.results[G.results.length-1];
   const nF=R.found.size,empty=s.nK-s.kHit,sh=(me&&me.sharks)||0,fr=R.fresh||0,cheer=nF===0?'The fish got away!':sh>=3?sh+' gold sharks landed!':fr>=6?fr+' new species for the logbook!':empty===0?(nF>=25?'Every pocket bursting!':['Every pocket full!','A full spread, Doc!','Nets full!','Nothing slipped a class!'][G.i%4]):empty===1?'One pocket empty':empty+' pockets empty';const mon=me.monster;
   app.innerHTML=`<section class="panel">
     <div class="k" style="text-align:center">${multi?'Round '+(G.i+1)+' of '+G.list.length:'Practice'}: ${esc(R.cx.complaint)}</div>
@@ -789,7 +788,7 @@ function roundDone(){
       return `<div class="pvpip end"><svg viewBox="-15 -23 30 41" width="92" height="126" aria-hidden="true">${pipSVG(G.peak,fc)}</svg><div class="bub">${esc(line)}</div></div>${multi&&nx?`<div class="k" style="text-align:center;margin-top:2px">Next for Pip: ${esc(nx.what)} at ${esc(nx.at)}</div>`:''}`})()}
     <div class="done-title">${cheer}</div>
     <div class="bigscore" id="big">0</div>
-    <span class="badge">${multi?'Voyage rank: ':''}${esc(rank)}</span>${multi?`<div class="k" style="text-align:center;margin-top:6px">This dive: <span style="font-size:1.25em;letter-spacing:2px">${(()=>{const q=me.score.total/me.core,n=q>=1?3:q>=.6?2:1;return '🐚'.repeat(n)+'<span style="opacity:.25">'+'🐚'.repeat(3-n)+'</span>'})()}</span></div>`:''}
+    <span class="badge">${multi?"Today's rank: ":''}${esc(rank)}</span>${multi?`<div class="k" style="text-align:center;margin-top:6px">This dive: <span style="font-size:1.25em;letter-spacing:2px">${(()=>{const q=me.score.total/me.core,n=q>=1?3:q>=.6?2:1;return '🐚'.repeat(n)+'<span style="opacity:.25">'+'🐚'.repeat(3-n)+'</span>'})()}</span></div>`:''}
     <div class="tally"><div><span>🐟 ${R.found.size} causes</span><b>+${s.base}</b></div><div><span>🦈 Can't-miss bonus</span><b>+${s.cm}</b></div><div><span>🧭 ${s.kHit} of ${s.nK} classes</span><b>+${s.breadth}</b></div><div><span>🏅 Bounties</span><b>${me.bounties} of 3</b></div><div><span>📖 New to your logbook</span><b>${me.fresh}</b></div></div>
     ${mon?`<div class="pearl" style="margin-top:12px"><div class="k">👾 Mystery monster ${mon.got?'caught!':'got away'}</div><b>${esc(mon.c.n)}</b><div style="margin-top:4px">${esc(mon.c.why||'')}</div></div>`:''}
     ${(()=>{const gm=R.causes.filter((c,i)=>!R.found.has(i)&&(c.t===1||c.cm)&&!covered(R,c)).sort((x,y)=>(y.cm?1:0)-(x.cm?1:0)||x.t-y.t).slice(0,5);return gm.length?`<div class="away"><div class="k">🎣 The ones that got away (tap for why)</div><div class="causes">${gm.map(c=>`<button class="cz"><span class="nm"><span>${esc(c.n)}${c.cm?'<span class="star">★ can\'t miss</span>':''}</span><span class="tier">${ptsOf(c)}</span></span><span class="wy">${esc(c.why||'')}</span></button>`).join('')}</div></div>`:''})()}
@@ -814,7 +813,7 @@ function roundDone(){
 function summary(rec){
   const tot=rec.rounds.reduce((a,r)=>a+r.total,0);
   const ratio=r=>{const cx=DATA.find(d=>d.id===r.id);return cx?r.total/corePts(prepRound(cx)):0};
-  const coreOf=r=>r.core||(()=>{const cx=DATA.find(d=>d.id===r.id);return cx?corePts(prepRound(cx)):1})();const dayRank=RANKS[Math.max(rec.peak||0,rankOf(rec.rounds.reduce((a,r)=>a+r.total/coreOf(r),0)/rec.rounds.length))][1];const bty=rec.rounds.reduce((a,r)=>a+(r.bounties||0),0),fresh=rec.rounds.reduce((a,r)=>a+(r.fresh||0),0);
+  const coreOf=r=>r.core||(()=>{const cx=DATA.find(d=>d.id===r.id);return cx?corePts(prepRound(cx)):1})();const dayRank=RANKS[rankOf(tot)][1];const bty=rec.rounds.reduce((a,r)=>a+(r.bounties||0),0),fresh=rec.rounds.reduce((a,r)=>a+(r.fresh||0),0);
   const rows=rec.rounds.map(r=>{const cx=DATA.find(d=>d.id===r.id);const sq='🟦'.repeat(r.kHit)+'⬜'.repeat(Math.max(0,r.nK-r.kHit));return {cx,r,sq}});
   const cells=r=>{const cx=DATA.find(d=>d.id===r.id);if(!cx)return '';const R=prepRound(cx);const best=cx.classes.map(()=>0);(r.found||[]).forEach(i=>{const c=R.causes[i];if(c)best[c.ki]=Math.max(best[c.ki],c.cm?4:c.t)});return best.map(b=>b===4?'🟨':b===3?'🟪':b===2?'🟦':b===1?'🔹':'⬜').join('')};
   const share=`Wide Net No. ${rec.day} 🎣 ${dayRank}, ${tot} pts\n`+rec.rounds.map((r,i)=>`${cells(r)} ${r.found.length}🐟${r.sharks?' '+r.sharks+'🦈':''}`).join('\n')+`\nhttps://ceoswari.github.io/wide-net-game/`;
@@ -827,7 +826,7 @@ function summary(rec){
    ${cardHTML(asResults,rec.rounds.length,-1)}${rec.extra?'':`<p class="k" style="text-align:center;margin-top:8px">Share squares, one per class: 🟨 gold shark, 🟪 niche, 🟦 solid, 🔹 common only, ⬜ empty</p>`}<div class="tally"><div><span>🏅 Bounties stamped</span><b>${bty} of ${rec.rounds.length*3}</b></div><div><span>📖 New species logged</span><b>${fresh}</b></div></div>
    <div class="cta" style="justify-content:center">${rec.extra?'':'<button class="btn big gold" id="share">Copy result</button>'}<button class="btn ${rec.extra?'big':''}" id="more">Play five more</button><button class="btn ghost" id="home">Home</button></div>
    <p class="sub" style="text-align:center;margin-top:14px">Tap a round to study its full map.</p>
-   <div class="list">${rows.map(o=>`<button data-id="${o.cx?o.cx.id:''}"><b>${esc(o.cx?o.cx.complaint:o.r.id)}</b><br><span class="rows">${cells(o.r)}</span><br><small class="k">${o.r.found.length} found, ${o.r.total} pts, ${esc(RANKS[rankOf(ratio(o.r))][1])}</small></button>`).join('')}</div></section>`;
+   <div class="list">${rows.map(o=>`<button data-id="${o.cx?o.cx.id:''}"><b>${esc(o.cx?o.cx.complaint:o.r.id)}</b><br><span class="rows">${cells(o.r)}</span><br><small class="k">${o.r.found.length} found, ${o.r.total} pts, ${'🐚'.repeat(ratio(o.r)>=1?3:ratio(o.r)>=.6?2:1)}</small></button>`).join('')}</div></section>`;
   countUp($('#big'),tot,1200);window.scrollTo(0,0);
   $('#more').onclick=playMore;$('#home').onclick=home;
   if(!rec.extra)$('#share').onclick=()=>{try{navigator.clipboard.writeText(share).then(()=>toast('Copied'),()=>toast(share))}catch(e){toast(share)}};
